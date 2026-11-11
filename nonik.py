@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# nik_aggregator.py — termux single-file
+# nonik.py — termux single-file NIK aggregator
 #
 # SETUP:
 #   pkg update && pkg upgrade -y
 #   pkg install python tesseract -y
-#   pip install httpx beautifulsoup4 dnspython pytesseract cloudscraper curl_cffi
+#   pip install httpx beautifulsoup4 pytesseract cloudscraper pillow
 #
-# EDIT SECTION 1: API keys, telegram, TARGETS (ganti ke URL search NIK asli).
+# EDIT SECTION 1: ganti url/param tiap target ke endpoint search NIK asli.
 
 # ============================================================
 # [SECTION 1] CONFIG
@@ -20,43 +20,90 @@ TELEGRAM_CHAT   = ""
 OUTPUT_JSON     = "nik_results.json"
 CONCURRENCY     = 10
 HTTP_TIMEOUT    = 15
-SHOW_FULL_TEXT  = True     # tampilkan semua teks halaman di terminal
-MAX_TEXT_CHARS  = 3000     # batas teks per situs biar terminal nggak banjir
+SHOW_FULL_TEXT  = True
+MAX_TEXT_CHARS  = 3000
 
 USER_AGENTS = [
     "Mozilla/5.0 (Linux; Android 13; SM-A536E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36",
 ]
 
-# GANTI url ke endpoint search NIK yang beneran.
-# contoh struktur yang benar: url form action-nya, param = name field input NIK.
+# 50 target — GANTI url ke endpoint search NIK asli per situs.
+# field: name, url, method, param, captcha, parser, rate
 TARGETS = [
-    # name,                    url (form action asli),                          method, param,       captcha
-    {"name": "contoh_situs",   "url": "https://contoh.go.id/api/cek-nik",         "method": "GET",  "param": "nik", "captcha": "none", "parser": "generic", "rate": 1.0},
-    # ↑ duplikat baris ini 50x, ganti name+url+param per situs.
-    # kalau endpoint-nya POST: method POST, param = name field mereka.
-    # kalau pakai captcha: isi "recaptcha_v2" / "hcaptcha" / "turnstile" / "math" / "ocr_image".
+    {"name":"dukcapil_kemendagri",  "url":"https://dukcapil.kemendagri.go.id/",       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemendagri",           "url":"https://kemendagri.go.id/",                "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenkeu",             "url":"https://kemenkeu.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemkes",               "url":"https://kemkes.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemdikbud",            "url":"https://kemdikbud.go.id/",                 "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenag",              "url":"https://kemenag.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenkumham",          "url":"https://kemenkumham.go.id/",               "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemlu",                "url":"https://kemlu.go.id/",                     "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemhan",               "url":"https://kemhan.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenperin",           "url":"https://kemenperin.go.id/",                "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenkop",             "url":"https://kemenkopukm.go.id/",               "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenparekraf",        "url":"https://kemenparekraf.go.id/",             "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenhub",             "url":"https://dephub.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenpupr",            "url":"https://pu.go.id/",                        "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenesdm",            "url":"https://esdm.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenlhk",             "url":"https://menlhk.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenpppa",            "url":"https://kemenpppa.go.id/",                 "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenko_polhukam",     "url":"https://polkam.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenko_marves",       "url":"https://maritim.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenko_ekon",         "url":"https://ekon.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"bappenas",             "url":"https://bappenas.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"bkn",                  "url":"https://bkn.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"bpjs_kesehatan",       "url":"https://bpjs-kesehatan.go.id/",            "method":"GET","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
+    {"name":"bpjs_ketenagakerjaan", "url":"https://bpjsketenagakerjaan.go.id/",       "method":"GET","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
+    {"name":"djp_online",           "url":"https://djponline.pajak.go.id/",           "method":"GET","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
+    {"name":"pajak",                "url":"https://pajak.go.id/",                     "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"ahu_kemenkumham",      "url":"https://ahu.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"imigrasi",             "url":"https://imigrasi.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"ssc_kemenkeu",         "url":"https://ssc.kemenkeu.go.id/",              "method":"GET","param":"nik","captcha":"hcaptcha","parser":"generic","rate":2.0},
+    {"name":"lpse_lkpp",            "url":"https://lpse.lkpp.go.id/",                 "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"lkpp",                 "url":"https://lkpp.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"bssn",                 "url":"https://bssn.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kominfo",              "url":"https://kominfo.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"brin",                 "url":"https://brin.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"bappebti",             "url":"https://bappebti.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"bkpm",                 "url":"https://bkpm.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"bps",                  "url":"https://bps.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"atrbpn",               "url":"https://atrbpn.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"beacukai",             "url":"https://beacukai.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"ojk",                  "url":"https://ojk.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"bi",                   "url":"https://bi.go.id/",                        "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"lps",                  "url":"https://lps.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"idx",                  "url":"https://idx.co.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"customs",              "url":"https://customs.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenpora",            "url":"https://kemenpora.go.id/",                 "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"komdigi",              "url":"https://komdigi.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"setjen_kemenkeu",      "url":"https://setjen.kemenkeu.go.id/",           "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenkeu_djkn",        "url":"https://djkn.kemenkeu.go.id/",             "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenkeu_bppk",        "url":"https://bppk.kemenkeu.go.id/",             "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    {"name":"kemenkeu_dja",         "url":"https://dja.kemenkeu.go.id/",              "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
 ]
 
 # ============================================================
 # [SECTION 2] DEPS
 # ============================================================
 import sys, importlib
-REQUIRED = [
-    ("httpx","pip install httpx"),("bs4","pip install beautifulsoup4"),
+REQUIRED=[
+    ("httpx","pip install httpx"),
+    ("bs4","pip install beautifulsoup4"),
     ("pytesseract","pip install pytesseract  (pkg install tesseract)"),
-    ("cloudscraper","pip install cloudscraper"),("curl_cffi","pip install curl_cffi"),
+    ("cloudscraper","pip install cloudscraper"),
     ("PIL","pip install pillow"),
 ]
+def _has(m):
+    try: importlib.import_module(m); return True
+    except ImportError: return False
 def check_deps():
     miss=[(m,h) for m,h in REQUIRED if not _has(m)]
     if miss:
         print("\n[!] dependency kurang:\n")
         for m,h in miss: print(f"  - {m:<16} → {h}")
         print("\ninstall dulu, jalanin ulang.\n"); sys.exit(1)
-def _has(m):
-    try: importlib.import_module(m); return True
-    except ImportError: return False
 check_deps()
 
 # ============================================================
@@ -65,25 +112,20 @@ check_deps()
 import asyncio, sqlite3, json, time, random, io, re
 from dataclasses import dataclass, field, asdict
 from typing import Optional
-from urllib.parse import urlparse
 
 @dataclass
 class TargetResult:
-    target: str
-    url: str
-    status: str
-    nik: str
-    data: dict = field(default_factory=dict)
-    error: str = ""
-    elapsed: float = 0.0
-    timestamp: float = field(default_factory=time.time)
+    target:str; url:str; status:str; nik:str
+    data:dict=field(default_factory=dict)
+    error:str=""; elapsed:float=0.0
+    timestamp:float=field(default_factory=time.time)
 
 # ============================================================
 # [SECTION 4] CAPTCHA
 # ============================================================
 class BaseSolver:
     name="base"
-    async def solve(self, html, sitekey="", siteurl="", img=b""): raise NotImplementedError
+    async def solve(self,html,sitekey="",siteurl="",img=b""): raise NotImplementedError
 
 class NoSolver(BaseSolver):
     name="none"
@@ -181,11 +223,10 @@ class ProxyMgr:
     def load(path):
         try: return [l.strip() for l in open(path) if l.strip() and not l.startswith("#")]
         except Exception: return []
-
 PROXY=ProxyMgr(ProxyMgr.load("proxies.txt"))
 
 # ============================================================
-# [SECTION 6] HTTP
+# [SECTION 6] HTTP — httpx versi baru (proxy singular)
 # ============================================================
 import httpx
 HEADERS={"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -211,8 +252,23 @@ async def _cf(url,method,param,nik,headers):
     except Exception:
         return httpx.Response(599,content=b"",request=httpx.Request(method,url))
 
+def _client_kwargs():
+    kw={"limits":httpx.Limits(max_keepalive_connections=CONCURRENCY*2,max_connections=CONCURRENCY*4),
+        "verify":False,"timeout":HTTP_TIMEOUT,"follow_redirects":True}
+    p=PROXY.get()
+    if p:
+        # httpx baru pakai 'proxy', lama pakai 'proxies'
+        try:
+            v=httpx.__version__
+            major,minor=[int(x) for x in v.split(".")[:2]]
+            if (major,minor)>=(0,28): kw["proxy"]=p
+            else: kw["proxies"]=p
+        except Exception:
+            kw["proxy"]=p
+    return kw
+
 # ============================================================
-# [SECTION 7] PARSER — dump SEMUA yang ada di halaman
+# [SECTION 7] PARSER
 # ============================================================
 from bs4 import BeautifulSoup
 
@@ -220,23 +276,18 @@ def parse_generic(html,url):
     soup=BeautifulSoup(html,"html.parser")
     out={"url":url,"title":"","headings":[],"paragraphs":[],"tables":[],
          "kv_pairs":[],"links":[],"nik_matches":[],"numbers":[],"status_hint":"unknown"}
+    if soup.title and soup.title.string: out["title"]=soup.title.string.strip()
 
-    if soup.title and soup.title.string:
-        out["title"]=soup.title.string.strip()
-
-    # headings
     for tag in soup.find_all(["h1","h2","h3","h4"]):
         txt=tag.get_text(" ",strip=True)
         if txt and len(txt)<200: out["headings"].append(txt)
 
-    # paragraphs / divs teks
     seen=set()
     for tag in soup.find_all(["p","li","td","span","div","label","strong","b"]):
         txt=tag.get_text(" ",strip=True)
         if 4<len(txt)<500 and txt not in seen and not any(txt in s for s in seen):
             seen.add(txt); out["paragraphs"].append(txt)
 
-    # tables — baris per baris
     for tbl in soup.find_all("table"):
         rows=[]
         for tr in tbl.find_all("tr"):
@@ -245,44 +296,35 @@ def parse_generic(html,url):
             if cells: rows.append(cells)
         if rows: out["tables"].append(rows)
 
-    # label : value
     for tag in soup.find_all(["label","dt","th","strong","b"]):
         lab=tag.get_text(" ",strip=True).rstrip(":").strip()
         if not (2<len(lab)<60): continue
         sib=tag.find_next_sibling()
         if sib:
             val=sib.get_text(" ",strip=True)
-            if 1<len(val)<200:
-                out["kv_pairs"].append({"label":lab,"value":val})
+            if 1<len(val)<200: out["kv_pairs"].append({"label":lab,"value":val})
 
-    # links penting
     for a in soup.find_all("a",href=True):
         t=a.get_text(" ",strip=True)
-        if t and 2<len(t)<80:
-            out["links"].append({"text":t,"href":a["href"][:200]})
+        if t and 2<len(t)<80: out["links"].append({"text":t,"href":a["href"][:200]})
 
-    # NIK match
     for m in re.finditer(r"\b\d{16}\b",html):
-        if m.group(0) not in out["nik_matches"]:
-            out["nik_matches"].append(m.group(0))
+        if m.group(0) not in out["nik_matches"]: out["nik_matches"].append(m.group(0))
 
-    # angka menarik (desil, skor, kategori)
-    for kw in ("desil","decile","skor","score","peringkat","rank","kategori","category","status","kelas","golongan"):
+    for kw in ("desil","decile","skor","score","peringkat","rank","kategori","category","status","kelas","golongan","bansos","bantuan"):
         for m in re.finditer(rf"{kw}[^\w]{{0,10}}([0-9]+|[A-Za-z]+)",html,re.I):
-            out["numbers"].append(f"{kw}: {m.group(1)}")
+            entry=f"{kw}: {m.group(1)}"
+            if entry not in out["numbers"]: out["numbers"].append(entry)
 
-    # status hint
     body=re.sub(r"\s+"," ",soup.get_text(" ")).lower()
     if any(w in body for w in ("tidak ditemukan","not found","tidak terdaftar","data tidak ada")):
         out["status_hint"]="not_found"
     elif any(w in body for w in ("ditemukan","found","terdaftar","berhasil")):
         out["status_hint"]="found"
 
-    # teks mentah
     if SHOW_FULL_TEXT:
         full=re.sub(r"\s+"," ",soup.get_text(" ")).strip()
         out["full_text"]=full[:MAX_TEXT_CHARS]
-
     return out
 
 PARSERS={"generic":parse_generic}
@@ -327,61 +369,45 @@ async def run_one(client,sem,t,nik):
 
 async def run_all(nik,on_done):
     sem=asyncio.Semaphore(CONCURRENCY)
-    lim=httpx.Limits(max_keepalive_connections=CONCURRENCY*2,max_connections=CONCURRENCY*4)
-    async with httpx.AsyncClient(limits=lim,proxies=PROXY.get(),verify=False) as client:
+    async with httpx.AsyncClient(**_client_kwargs()) as client:
         tasks=[asyncio.create_task(run_one(client,sem,t,nik)) for t in TARGETS]
         for c in asyncio.as_completed(tasks):
             on_done(await c)
 
 # ============================================================
-# [SECTION 10] DISPLAY — print lengkap ke terminal
+# [SECTION 10] DISPLAY
 # ============================================================
-def print_full_result(r: TargetResult, idx: int, total: int):
+def print_full_result(r:TargetResult,idx:int,total:int):
     flag={"ok":"✅","blocked":"🚫","fail":"❌","skipped":"⏭️"}.get(r.status,"•")
     print("\n"+"═"*60)
-    print(f"{flag} [{idx}/{total}] {r.target}  —  {r.status}  ({r.elapsed:.1f}s)")
+    print(f"{flag} [{idx}/{total}] {r.target} — {r.status} ({r.elapsed:.1f}s)")
     print(f"   {r.url}")
-    if r.error:
-        print(f"   error: {r.error}")
-    if r.status!="ok" or not r.data:
-        return
-
+    if r.error: print(f"   error: {r.error}")
+    if r.status!="ok" or not r.data: return
     d=r.data
     if d.get("title"): print(f"\n   📄 title: {d['title']}")
-
-    if d.get("status_hint") and d["status_hint"]!="unknown":
-        print(f"   📊 status: {d['status_hint']}")
-
-    if d.get("nik_matches"):
-        print(f"\n   🔢 NIK ditemukan di halaman: {', '.join(d['nik_matches'][:5])}")
-
+    if d.get("status_hint") and d["status_hint"]!="unknown": print(f"   📊 status: {d['status_hint']}")
+    if d.get("nik_matches"): print(f"\n   🔢 NIK ditemukan: {', '.join(d['nik_matches'][:5])}")
     if d.get("numbers"):
         print("\n   📈 angka/kategori:")
         for n in d["numbers"][:15]: print(f"      • {n}")
-
     if d.get("kv_pairs"):
-        print("\n   🏷️  label → value:")
-        for kv in d["kv_pairs"][:20]:
-            print(f"      • {kv['label']}: {kv['value'][:80]}")
-
+        print("\n   🏷️ label → value:")
+        for kv in d["kv_pairs"][:20]: print(f"      • {kv['label']}: {kv['value'][:80]}")
     if d.get("tables"):
         print("\n   📋 tabel:")
         for ti,tbl in enumerate(d["tables"][:3]):
             print(f"      [tabel {ti+1}]")
-            for row in tbl[:10]:
-                print(f"        | " + " | ".join(c[:30] for c in row))
-
+            for row in tbl[:10]: print("        | "+" | ".join(c[:30] for c in row))
     if d.get("headings"):
         print("\n   🔖 headings:")
         for h in d["headings"][:10]: print(f"      • {h[:100]}")
-
     if d.get("paragraphs"):
         print("\n   📝 teks:")
         for p in d["paragraphs"][:15]: print(f"      • {p[:160]}")
-
     if d.get("full_text"):
-        print("\n   📃 full text (potongan):")
-        print("      " + d["full_text"][:1200].replace("\n"," "))
+        print("\n   📃 full text:")
+        print("      "+d["full_text"][:1200])
 
 def print_header(nik):
     print("="*60)
@@ -408,11 +434,9 @@ async def send_tg(nik,results):
     for r in results:
         flag={"ok":"✅","blocked":"🚫","fail":"❌"}.get(r.status,"•")
         lines.append(f"{flag} {r.target} — {r.status}")
-        if r.status=="ok" and r.data.get("status_hint"):
-            lines.append(f"   {r.data['status_hint']}")
+        if r.status=="ok" and r.data.get("status_hint"): lines.append(f"   {r.data['status_hint']}")
         if r.status=="ok" and r.data.get("kv_pairs"):
-            for kv in r.data["kv_pairs"][:3]:
-                lines.append(f"   {kv['label']}: {kv['value'][:40]}")
+            for kv in r.data["kv_pairs"][:3]: lines.append(f"   {kv['label']}: {kv['value'][:40]}")
     try:
         async with httpx.AsyncClient(timeout=20) as c:
             await c.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -428,15 +452,11 @@ def save_json(nik,results,path=OUTPUT_JSON):
 
 def main():
     if not TARGETS:
-        print("[!] TARGETS kosong. isi dulu di SECTION 1 dengan URL search NIK asli.")
-        return
+        print("[!] TARGETS kosong."); return
     print_header("—")
-    try:
-        nik=input("masukkan NIK (16 digit): ").strip()
-    except (EOFError,KeyboardInterrupt):
-        print("\nbatal."); return
-    if not re.fullmatch(r"\d{16}",nik):
-        print("[!] NIK harus 16 digit."); return
+    try: nik=input("masukkan NIK (16 digit): ").strip()
+    except (EOFError,KeyboardInterrupt): print("\nbatal."); return
+    if not re.fullmatch(r"\d{16}",nik): print("[!] NIK harus 16 digit."); return
 
     print_header(nik)
     con=init_db(); results=[]; idx=0; total=len(TARGETS)

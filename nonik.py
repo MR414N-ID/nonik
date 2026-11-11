@@ -5,8 +5,6 @@
 #   pkg update && pkg upgrade -y
 #   pkg install python tesseract -y
 #   pip install httpx beautifulsoup4 pytesseract cloudscraper pillow
-#
-# EDIT SECTION 1: ganti url/param tiap target ke endpoint search NIK asli.
 
 # ============================================================
 # [SECTION 1] CONFIG
@@ -18,10 +16,8 @@ TELEGRAM_TOKEN  = ""
 TELEGRAM_CHAT   = ""
 
 OUTPUT_JSON     = "nik_results.json"
-CONCURRENCY     = 10
+CONCURRENCY     = 8
 HTTP_TIMEOUT    = 15
-SHOW_FULL_TEXT  = True
-MAX_TEXT_CHARS  = 3000
 
 USER_AGENTS = [
     "Mozilla/5.0 (Linux; Android 13; SM-A536E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
@@ -29,59 +25,50 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36",
 ]
 
-# 50 target — GANTI url ke endpoint search NIK asli per situs.
-# field: name, url, method, param, captcha, parser, rate
+# 38 situs — NIK saja / NIK + captcha.
+# param = nama field input NIK di form asli. sebagian pakai "nik", sebagian "no_ktp", dll.
+# method POST dipakai kalau form-nya submit POST. GET kalau query string.
 TARGETS = [
-    {"name":"dukcapil_kemendagri",  "url":"https://dukcapil.kemendagri.go.id/",       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemendagri",           "url":"https://kemendagri.go.id/",                "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenkeu",             "url":"https://kemenkeu.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemkes",               "url":"https://kemkes.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemdikbud",            "url":"https://kemdikbud.go.id/",                 "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenag",              "url":"https://kemenag.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenkumham",          "url":"https://kemenkumham.go.id/",               "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemlu",                "url":"https://kemlu.go.id/",                     "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemhan",               "url":"https://kemhan.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenperin",           "url":"https://kemenperin.go.id/",                "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenkop",             "url":"https://kemenkopukm.go.id/",               "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenparekraf",        "url":"https://kemenparekraf.go.id/",             "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenhub",             "url":"https://dephub.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenpupr",            "url":"https://pu.go.id/",                        "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenesdm",            "url":"https://esdm.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenlhk",             "url":"https://menlhk.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenpppa",            "url":"https://kemenpppa.go.id/",                 "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenko_polhukam",     "url":"https://polkam.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenko_marves",       "url":"https://maritim.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenko_ekon",         "url":"https://ekon.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"bappenas",             "url":"https://bappenas.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"bkn",                  "url":"https://bkn.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"bpjs_kesehatan",       "url":"https://bpjs-kesehatan.go.id/",            "method":"GET","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
-    {"name":"bpjs_ketenagakerjaan", "url":"https://bpjsketenagakerjaan.go.id/",       "method":"GET","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
-    {"name":"djp_online",           "url":"https://djponline.pajak.go.id/",           "method":"GET","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
-    {"name":"pajak",                "url":"https://pajak.go.id/",                     "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"ahu_kemenkumham",      "url":"https://ahu.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"imigrasi",             "url":"https://imigrasi.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"ssc_kemenkeu",         "url":"https://ssc.kemenkeu.go.id/",              "method":"GET","param":"nik","captcha":"hcaptcha","parser":"generic","rate":2.0},
-    {"name":"lpse_lkpp",            "url":"https://lpse.lkpp.go.id/",                 "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"lkpp",                 "url":"https://lkpp.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"bssn",                 "url":"https://bssn.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kominfo",              "url":"https://kominfo.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"brin",                 "url":"https://brin.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"bappebti",             "url":"https://bappebti.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"bkpm",                 "url":"https://bkpm.go.id/",                      "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"bps",                  "url":"https://bps.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"atrbpn",               "url":"https://atrbpn.go.id/",                    "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"beacukai",             "url":"https://beacukai.go.id/",                  "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"ojk",                  "url":"https://ojk.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"bi",                   "url":"https://bi.go.id/",                        "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"lps",                  "url":"https://lps.go.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"idx",                  "url":"https://idx.co.id/",                       "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"customs",              "url":"https://customs.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenpora",            "url":"https://kemenpora.go.id/",                 "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"komdigi",              "url":"https://komdigi.go.id/",                   "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"setjen_kemenkeu",      "url":"https://setjen.kemenkeu.go.id/",           "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenkeu_djkn",        "url":"https://djkn.kemenkeu.go.id/",             "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenkeu_bppk",        "url":"https://bppk.kemenkeu.go.id/",             "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
-    {"name":"kemenkeu_dja",         "url":"https://dja.kemenkeu.go.id/",              "method":"GET","param":"nik","captcha":"none","parser":"generic","rate":1.0},
+    # ---- NASIONAL ----
+    {"name":"cekbansos_kemensos",       "url":"https://cekbansos.kemensos.go.id/",                                       "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"cekbansos_siks",           "url":"https://cekbansos.siks.kemsos.go.id/kemsos/pencarian",                   "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"dtks_kemensos",            "url":"https://dtks.kemensos.go.id/",                                            "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"bsu_kemnaker",             "url":"https://bsu.kemnaker.go.id/",                                             "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"kip_kuliah",               "url":"https://kip-kuliah.kemdiktisaintek.go.id/penerima",                       "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"cekdptonline_kpu",         "url":"https://cekdptonline.kpu.go.id/",                                         "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"infopemilu_kpu",           "url":"https://infopemilu.kpu.go.id/Pemilu/Cari_nik",                            "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"ceknik_kpu",               "url":"https://ceknik.kpu.go.id/",                                               "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"cek_nik_dukcapil",         "url":"https://cek-nik.dukcapil.kemendagri.go.id/",                              "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"dukcapil_kemendagri",      "url":"https://dukcapil.kemendagri.go.id/",                                       "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"datawarga_jakarta",        "url":"https://datawarga-dukcapil.jakarta.go.id/",                               "method":"POST","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
+    {"name":"idebku_ojk",               "url":"https://idebku.ojk.go.id/",                                               "method":"POST","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
+    {"name":"peduliwni_kemlu",          "url":"https://peduliwni.kemlu.go.id/",                                          "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"satusehat_kemkes",         "url":"https://satusehat.kemkes.go.id/",                                         "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"pajakonline_jakarta",      "url":"https://pajakonline.jakarta.go.id/",                                      "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"subsiditepat_pertamina",   "url":"https://subsiditepat.mypertamina.id/LPG/CekNIK",                          "method":"POST","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
+    {"name":"pedulilindungi",           "url":"https://www.pedulilindungi.id/cek-nik",                                   "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    # ---- DAERAH ----
+    {"name":"disdukcapil_tangerangkota","url":"https://disdukcapil.tangerangkota.go.id/ceknik/",                        "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"siakcapil_tangsel",        "url":"https://siakcapil.tangerangselatankota.go.id/",                           "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"ceknik_bogorkab",          "url":"https://ceknik.dukcapilbogorkab.id/",                                     "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"disdukcapil_surabaya",     "url":"https://disdukcapil.surabaya.go.id/data-usulan-blokir/",                  "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"layanandukcapil_grobogan", "url":"https://layanandukcapil.grobogan.go.id/ceknik",                           "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"dispendukcapil_grobogan",  "url":"https://dispendukcapil.grobogan.go.id/ceknik",                            "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"disdukcapil_bandung",      "url":"https://disdukcapil.bandung.go.id/",                                      "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"dispenduk_mojokerto",      "url":"https://dispenduk.mojokertokota.go.id/",                                  "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"sipadan_kayongutara",      "url":"https://sipadan.disdukcapil.kayongutarakab.go.id/",                       "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"disdukcapil_palangkaraya", "url":"https://disdukcapil.palangkaraya.go.id/",                                 "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"kependudukan_palembang",   "url":"https://kependudukancapil.palembang.go.id/",                              "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"dukcapilonline_wonosobo",  "url":"https://dukcapilonline.wonosobokab.go.id/",                               "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"disdukcapil_depok",        "url":"https://disdukcapil.depok.go.id/",                                        "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"disdukcapil_bekasikab",    "url":"https://disdukcapil.bekasikab.go.id/",                                    "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"disdukcapil_pekalongan",   "url":"https://disdukcapil.pekalongankota.go.id/",                               "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"kependudukan_jogja",       "url":"https://kependudukancapil.jogjaprov.go.id/",                              "method":"POST","param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"eservices_semarang",       "url":"https://eservices.dispendukcapil.semarangkota.go.id/",                    "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"disdukcapil_morowali",     "url":"https://disdukcapil.morowalikab.go.id/",                                  "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"dukcapilonline_sleman",    "url":"https://dukcapilonline.slemankab.go.id/",                                 "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"disdukcapil_pasamanbarat", "url":"https://disdukcapil.pasamanbaratkab.go.id/",                              "method":"GET", "param":"nik","captcha":"none","parser":"generic","rate":2.0},
+    {"name":"sidatuk_jabar",            "url":"https://sidatukdukcapil.jabarprov.go.id/",                                "method":"POST","param":"nik","captcha":"recaptcha_v2","parser":"generic","rate":2.0},
 ]
 
 # ============================================================
@@ -111,7 +98,6 @@ check_deps()
 # ============================================================
 import asyncio, sqlite3, json, time, random, io, re
 from dataclasses import dataclass, field, asdict
-from typing import Optional
 
 @dataclass
 class TargetResult:
@@ -226,7 +212,7 @@ class ProxyMgr:
 PROXY=ProxyMgr(ProxyMgr.load("proxies.txt"))
 
 # ============================================================
-# [SECTION 6] HTTP — httpx versi baru (proxy singular)
+# [SECTION 6] HTTP
 # ============================================================
 import httpx
 HEADERS={"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -257,7 +243,6 @@ def _client_kwargs():
         "verify":False,"timeout":HTTP_TIMEOUT,"follow_redirects":True}
     p=PROXY.get()
     if p:
-        # httpx baru pakai 'proxy', lama pakai 'proxies'
         try:
             v=httpx.__version__
             major,minor=[int(x) for x in v.split(".")[:2]]
@@ -268,19 +253,15 @@ def _client_kwargs():
     return kw
 
 # ============================================================
-# [SECTION 7] PARSER
+# [SECTION 7] PARSER — tanpa heading & full text
 # ============================================================
 from bs4 import BeautifulSoup
 
 def parse_generic(html,url):
     soup=BeautifulSoup(html,"html.parser")
-    out={"url":url,"title":"","headings":[],"paragraphs":[],"tables":[],
+    out={"url":url,"title":"","paragraphs":[],"tables":[],
          "kv_pairs":[],"links":[],"nik_matches":[],"numbers":[],"status_hint":"unknown"}
     if soup.title and soup.title.string: out["title"]=soup.title.string.strip()
-
-    for tag in soup.find_all(["h1","h2","h3","h4"]):
-        txt=tag.get_text(" ",strip=True)
-        if txt and len(txt)<200: out["headings"].append(txt)
 
     seen=set()
     for tag in soup.find_all(["p","li","td","span","div","label","strong","b"]):
@@ -311,20 +292,16 @@ def parse_generic(html,url):
     for m in re.finditer(r"\b\d{16}\b",html):
         if m.group(0) not in out["nik_matches"]: out["nik_matches"].append(m.group(0))
 
-    for kw in ("desil","decile","skor","score","peringkat","rank","kategori","category","status","kelas","golongan","bansos","bantuan"):
+    for kw in ("desil","decile","skor","score","peringkat","rank","kategori","category","status","kelas","golongan","bansos","bantuan","peserta","penerima"):
         for m in re.finditer(rf"{kw}[^\w]{{0,10}}([0-9]+|[A-Za-z]+)",html,re.I):
             entry=f"{kw}: {m.group(1)}"
             if entry not in out["numbers"]: out["numbers"].append(entry)
 
     body=re.sub(r"\s+"," ",soup.get_text(" ")).lower()
-    if any(w in body for w in ("tidak ditemukan","not found","tidak terdaftar","data tidak ada")):
+    if any(w in body for w in ("tidak ditemukan","not found","tidak terdaftar","data tidak ada","tidak valid")):
         out["status_hint"]="not_found"
-    elif any(w in body for w in ("ditemukan","found","terdaftar","berhasil")):
+    elif any(w in body for w in ("ditemukan","found","terdaftar","berhasil","valid")):
         out["status_hint"]="found"
-
-    if SHOW_FULL_TEXT:
-        full=re.sub(r"\s+"," ",soup.get_text(" ")).strip()
-        out["full_text"]=full[:MAX_TEXT_CHARS]
     return out
 
 PARSERS={"generic":parse_generic}
@@ -375,7 +352,7 @@ async def run_all(nik,on_done):
             on_done(await c)
 
 # ============================================================
-# [SECTION 10] DISPLAY
+# [SECTION 10] DISPLAY — tanpa heading & full text
 # ============================================================
 def print_full_result(r:TargetResult,idx:int,total:int):
     flag={"ok":"✅","blocked":"🚫","fail":"❌","skipped":"⏭️"}.get(r.status,"•")
@@ -399,15 +376,9 @@ def print_full_result(r:TargetResult,idx:int,total:int):
         for ti,tbl in enumerate(d["tables"][:3]):
             print(f"      [tabel {ti+1}]")
             for row in tbl[:10]: print("        | "+" | ".join(c[:30] for c in row))
-    if d.get("headings"):
-        print("\n   🔖 headings:")
-        for h in d["headings"][:10]: print(f"      • {h[:100]}")
     if d.get("paragraphs"):
         print("\n   📝 teks:")
         for p in d["paragraphs"][:15]: print(f"      • {p[:160]}")
-    if d.get("full_text"):
-        print("\n   📃 full text:")
-        print("      "+d["full_text"][:1200])
 
 def print_header(nik):
     print("="*60)

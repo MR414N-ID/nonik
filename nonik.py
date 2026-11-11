@@ -1,400 +1,459 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-MR 414N -ID
-NIK Multi-Gov Scraper (Single File)
-Input: NIK only
-Hardcoded 50+ government sites
-Multi-layer anti-captcha
-"""
-
-import os
-import sys
-import time
-import json
-import base64
-import hashlib
-import requests
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+# nik_aggregator.py — termux single-file
+#
+# SETUP:
+#   pkg update && pkg upgrade -y
+#   pkg install python tesseract -y
+#   pip install httpx beautifulsoup4 dnspython pytesseract cloudscraper curl_cffi
+#
+# EDIT SECTION 1: API keys, telegram, TARGETS (ganti ke URL search NIK asli).
 
 # ============================================================
-# BANNER
+# [SECTION 1] CONFIG
 # ============================================================
-BANNER = r"""
-███╗   ███╗██████╗     ██╗  ██╗ ██╗██╗  ██╗███╗   ██╗     ██╗██████╗ 
-████╗ ████║██╔══██╗    ██║  ██║███║██║  ██║████╗  ██║    ██╔╝██╔══██╗
-██╔████╔██║██████╔╝    ███████║╚██║███████║██╔██╗ ██║    ██║ ██║  ██║
-██║╚██╔╝██║██╔══██╗    ╚════██║ ██║╚════██║██║╚██╗██║    ██║ ██║  ██║
-██║ ╚═╝ ██║██║  ██║         ██║ ██║     ██║██║ ╚████║    ╚██╗██████╔╝
-╚═╝     ╚═╝╚═╝  ╚═╝         ╚═╝ ╚═╝     ╚═╝╚═╝  ╚═══╝     ╚═╝╚═════╝ 
-                                                                      
-              NIK MULTI-GOV SCRAPER  |  SINGLE FILE
-"""
 
-# ============================================================
-# CONFIG
-# ============================================================
-CAPTCHA_KEYS = {
-    "2captcha": os.getenv("TWOCAPTCHA_KEY", ""),
-    "anticaptcha": os.getenv("ANTICAPTCHA_KEY", ""),
-    "capmonster": os.getenv("CAPMONSTER_KEY", ""),
-    "capsolver": os.getenv("CAPSOLVER_KEY", ""),
-}
+CAPSOLVER_KEY   = ""
+TWOCAPTCHA_KEY  = ""
+TELEGRAM_TOKEN  = ""
+TELEGRAM_CHAT   = ""
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Connection": "keep-alive",
-}
+OUTPUT_JSON     = "nik_results.json"
+CONCURRENCY     = 10
+HTTP_TIMEOUT    = 15
+SHOW_FULL_TEXT  = True     # tampilkan semua teks halaman di terminal
+MAX_TEXT_CHARS  = 3000     # batas teks per situs biar terminal nggak banjir
 
-TIMEOUT = 20
-MAX_WORKERS = 8
+USER_AGENTS = [
+    "Mozilla/5.0 (Linux; Android 13; SM-A536E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+]
 
-# ============================================================
-# 50+ GOVERNMENT SITES (hardcoded)
-# Format: name, url, method, nik_field, extra_fields, notes
-# ============================================================
-SITES = [
-    {"name": "Cek Bansos Kemensos", "url": "https://cekbansos.kemensos.go.id", "method": "GET", "nik_field": "nik", "notes": "bansos/desil"},
-    {"name": "DTSEN BPS Form", "url": "https://dtsen-form.bps.go.id", "method": "GET", "nik_field": "nik", "notes": "desil DTSEN"},
-    {"name": "BSU Kemnaker", "url": "https://bsu.kemnaker.go.id", "method": "GET", "nik_field": "nik", "notes": "bantuan subsidi upah"},
-    {"name": "BPJS Kesehatan", "url": "https://www.bpjs-kesehatan.go.id", "method": "GET", "nik_field": "nik", "notes": "status kepesertaan"},
-    {"name": "BPJS Ketenagakerjaan", "url": "https://www.bpjsketenagakerjaan.go.id", "method": "GET", "nik_field": "nik", "notes": "kepesertaan"},
-    {"name": "DJP Online", "url": "https://djponline.pajak.go.id", "method": "GET", "nik_field": "nik", "notes": "pajak"},
-    {"name": "Imigrasi", "url": "https://www.imigrasi.go.id", "method": "GET", "nik_field": "nik", "notes": "paspor/visa"},
-    {"name": "Dukcapil Kemendagri", "url": "https://dukcapil.kemendagri.go.id", "method": "GET", "nik_field": "nik", "notes": "kependudukan"},
-    {"name": "Lapor Kemendagri", "url": "https://kemendagri.lapor.go.id", "method": "GET", "nik_field": "nik", "notes": "pengaduan"},
-    {"name": "Alpukat Dukcapil DKI", "url": "https://alpukat-dukcapil.jakarta.go.id", "method": "GET", "nik_field": "nik", "notes": "DKI"},
-    {"name": "OSS", "url": "https://oss.go.id", "method": "GET", "nik_field": "nik", "notes": "izin usaha"},
-    {"name": "SSCASN BKN", "url": "https://sscasn.bkn.go.id", "method": "GET", "nik_field": "nik", "notes": "ASN"},
-    {"name": "Kemnaker", "url": "https://kemnaker.go.id", "method": "GET", "nik_field": "nik", "notes": "ketenagakerjaan"},
-    {"name": "Kemensos", "url": "https://kemensos.go.id", "method": "GET", "nik_field": "nik", "notes": "sosial"},
-    {"name": "Kemenkes", "url": "https://www.kemkes.go.id", "method": "GET", "nik_field": "nik", "notes": "kesehatan"},
-    {"name": "Kemenkeu", "url": "https://www.kemenkeu.go.id", "method": "GET", "nik_field": "nik", "notes": "keuangan"},
-    {"name": "Kominfo", "url": "https://www.kominfo.go.id", "method": "GET", "nik_field": "nik", "notes": "kominfo"},
-    {"name": "BSSN", "url": "https://www.bssn.go.id", "method": "GET", "nik_field": "nik", "notes": "siber"},
-    {"name": "BNPT", "url": "https://www.bnpt.go.id", "method": "GET", "nik_field": "nik", "notes": "terorisme"},
-    {"name": "Polri", "url": "https://www.polri.go.id", "method": "GET", "nik_field": "nik", "notes": "kepolisian"},
-    {"name": "TNI", "url": "https://tni.mil.id", "method": "GET", "nik_field": "nik", "notes": "militer"},
-    {"name": "Kejaksaan", "url": "https://www.kejaksaan.go.id", "method": "GET", "nik_field": "nik", "notes": "kejaksaan"},
-    {"name": "Mahkamah Agung", "url": "https://www.mahkamahagung.go.id", "method": "GET", "nik_field": "nik", "notes": "peradilan"},
-    {"name": "KPK", "url": "https://www.kpk.go.id", "method": "GET", "nik_field": "nik", "notes": "korupsi"},
-    {"name": "OJK", "url": "https://www.ojk.go.id", "method": "GET", "nik_field": "nik", "notes": "keuangan"},
-    {"name": "BI", "url": "https://www.bi.go.id", "method": "GET", "nik_field": "nik", "notes": "bank sentral"},
-    {"name": "LPS", "url": "https://www.lps.go.id", "method": "GET", "nik_field": "nik", "notes": "penjamin simpanan"},
-    {"name": "BPS", "url": "https://www.bps.go.id", "method": "GET", "nik_field": "nik", "notes": "statistik"},
-    {"name": "Bappenas", "url": "https://www.bappenas.go.id", "method": "GET", "nik_field": "nik", "notes": "perencanaan"},
-    {"name": "Kemendikbud", "url": "https://www.kemdikbud.go.id", "method": "GET", "nik_field": "nik", "notes": "pendidikan"},
-    {"name": "Kemenag", "url": "https://kemenag.go.id", "method": "GET", "nik_field": "nik", "notes": "agama"},
-    {"name": "Kemenkumham", "url": "https://www.kemenkumham.go.id", "method": "GET", "nik_field": "nik", "notes": "hukum"},
-    {"name": "Kemenlu", "url": "https://kemlu.go.id", "method": "GET", "nik_field": "nik", "notes": "luar negeri"},
-    {"name": "Kemenhan", "url": "https://www.kemhan.go.id", "method": "GET", "nik_field": "nik", "notes": "pertahanan"},
-    {"name": "Kemenhub", "url": "https://dephub.go.id", "method": "GET", "nik_field": "nik", "notes": "perhubungan"},
-    {"name": "Kemenperin", "url": "https://kemenperin.go.id", "method": "GET", "nik_field": "nik", "notes": "perindustrian"},
-    {"name": "Kemendag", "url": "https://www.kemendag.go.id", "method": "GET", "nik_field": "nik", "notes": "perdagangan"},
-    {"name": "Kementan", "url": "https://www.pertanian.go.id", "method": "GET", "nik_field": "nik", "notes": "pertanian"},
-    {"name": "KKP", "url": "https://kkp.go.id", "method": "GET", "nik_field": "nik", "notes": "kelautan"},
-    {"name": "KemenLHK", "url": "https://www.menlhk.go.id", "method": "GET", "nik_field": "nik", "notes": "lingkungan"},
-    {"name": "Kemen ESDM", "url": "https://www.esdm.go.id", "method": "GET", "nik_field": "nik", "notes": "energi"},
-    {"name": "Kemen PUPR", "url": "https://www.pu.go.id", "method": "GET", "nik_field": "nik", "notes": "pekerjaan umum"},
-    {"name": "Kemen ATR/BPN", "url": "https://www.atrbpn.go.id", "method": "GET", "nik_field": "nik", "notes": "agraria"},
-    {"name": "BNN", "url": "https://bnn.go.id", "method": "GET", "nik_field": "nik", "notes": "narkoba"},
-    {"name": "BNPB", "url": "https://bnpb.go.id", "method": "GET", "nik_field": "nik", "notes": "bencana"},
-    {"name": "BMKG", "url": "https://www.bmkg.go.id", "method": "GET", "nik_field": "nik", "notes": "cuaca"},
-    {"name": "LAPAN", "url": "https://www.lapan.go.id", "method": "GET", "nik_field": "nik", "notes": "antariksa"},
-    {"name": "BRIN", "url": "https://www.brin.go.id", "method": "GET", "nik_field": "nik", "notes": "riset"},
-    {"name": "LIPI", "url": "https://lipi.go.id", "method": "GET", "nik_field": "nik", "notes": "ilmu pengetahuan"},
-    {"name": "BPOM", "url": "https://www.pom.go.id", "method": "GET", "nik_field": "nik", "notes": "obat makanan"},
-    {"name": "BKKBN", "url": "https://www.bkkbn.go.id", "method": "GET", "nik_field": "nik", "notes": "keluarga berencana"},
-    {"name": "Kemendes PDTT", "url": "https://kemendesa.go.id", "method": "GET", "nik_field": "nik", "notes": "desa"},
-    {"name": "Kemenpora", "url": "https://www.kemenpora.go.id", "method": "GET", "nik_field": "nik", "notes": "pemuda olahraga"},
-    {"name": "Kemenparekraf", "url": "https://www.kemenparekraf.go.id", "method": "GET", "nik_field": "nik", "notes": "pariwisata"},
-    {"name": "Setkab", "url": "https://setkab.go.id", "method": "GET", "nik_field": "nik", "notes": "sekretariat kabinet"},
-    {"name": "Setneg", "url": "https://www.setneg.go.id", "method": "GET", "nik_field": "nik", "notes": "sekretariat negara"},
+# GANTI url ke endpoint search NIK yang beneran.
+# contoh struktur yang benar: url form action-nya, param = name field input NIK.
+TARGETS = [
+    # name,                    url (form action asli),                          method, param,       captcha
+    {"name": "contoh_situs",   "url": "https://contoh.go.id/api/cek-nik",         "method": "GET",  "param": "nik", "captcha": "none", "parser": "generic", "rate": 1.0},
+    # ↑ duplikat baris ini 50x, ganti name+url+param per situs.
+    # kalau endpoint-nya POST: method POST, param = name field mereka.
+    # kalau pakai captcha: isi "recaptcha_v2" / "hcaptcha" / "turnstile" / "math" / "ocr_image".
 ]
 
 # ============================================================
-# ANTI-CAPTCHA MULTI LAYER
+# [SECTION 2] DEPS
 # ============================================================
-def solve_captcha_local(image_bytes):
-    """Layer 1: Local OCR (Tesseract) - best effort"""
-    try:
-        import pytesseract
-        from PIL import Image
-        import io
-        img = Image.open(io.BytesIO(image_bytes)).convert("L")
-        # simple threshold
-        img = img.point(lambda x: 0 if x < 140 else 255)
-        text = pytesseract.image_to_string(img, config="--psm 8 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").strip()
-        if len(text) >= 3:
-            return text
-    except Exception:
-        pass
-    return None
-
-def solve_captcha_2captcha(image_b64, key):
-    """Layer 2: 2Captcha"""
-    if not key:
-        return None
-    try:
-        r = requests.post("http://2captcha.com/in.php", data={
-            "key": key, "method": "base64", "body": image_b64, "json": 1
-        }, timeout=15)
-        data = r.json()
-        if data.get("status") != 1:
-            return None
-        captcha_id = data["request"]
-        for _ in range(24):
-            time.sleep(5)
-            res = requests.get(f"http://2captcha.com/res.php?key={key}&action=get&id={captcha_id}&json=1", timeout=10).json()
-            if res.get("status") == 1:
-                return res["request"]
-            if res.get("request") != "CAPCHA_NOT_READY":
-                return None
-    except Exception:
-        pass
-    return None
-
-def solve_captcha_anticaptcha(image_b64, key):
-    """Layer 3: Anti-Captcha.com"""
-    if not key:
-        return None
-    try:
-        create = requests.post("https://api.anti-captcha.com/createTask", json={
-            "clientKey": key,
-            "task": {"type": "ImageToTextTask", "body": image_b64}
-        }, timeout=15).json()
-        if create.get("errorId") != 0:
-            return None
-        task_id = create["taskId"]
-        for _ in range(24):
-            time.sleep(5)
-            res = requests.post("https://api.anti-captcha.com/getTaskResult", json={
-                "clientKey": key, "taskId": task_id
-            }, timeout=10).json()
-            if res.get("status") == "ready":
-                return res["solution"]["text"]
-            if res.get("errorId") != 0:
-                return None
-    except Exception:
-        pass
-    return None
-
-def solve_captcha_capmonster(image_b64, key):
-    """Layer 4: CapMonster"""
-    if not key:
-        return None
-    try:
-        create = requests.post("https://api.capmonster.cloud/createTask", json={
-            "clientKey": key,
-            "task": {"type": "ImageToTextTask", "body": image_b64}
-        }, timeout=15).json()
-        if create.get("errorId") != 0:
-            return None
-        task_id = create["taskId"]
-        for _ in range(24):
-            time.sleep(5)
-            res = requests.post("https://api.capmonster.cloud/getTaskResult", json={
-                "clientKey": key, "taskId": task_id
-            }, timeout=10).json()
-            if res.get("status") == "ready":
-                return res["solution"]["text"]
-            if res.get("errorId") != 0:
-                return None
-    except Exception:
-        pass
-    return None
-
-def solve_captcha(image_bytes, image_url=None):
-    """Multi-layer solver. Tries all available providers in order."""
-    image_b64 = base64.b64encode(image_bytes).decode() if image_bytes else None
-
-    # Layer 1 - local
-    if image_bytes:
-        result = solve_captcha_local(image_bytes)
-        if result:
-            return result, "local-ocr"
-
-    # Layer 2 - 2captcha
-    if image_b64 and CAPTCHA_KEYS["2captcha"]:
-        result = solve_captcha_2captcha(image_b64, CAPTCHA_KEYS["2captcha"])
-        if result:
-            return result, "2captcha"
-
-    # Layer 3 - anticaptcha
-    if image_b64 and CAPTCHA_KEYS["anticaptcha"]:
-        result = solve_captcha_anticaptcha(image_b64, CAPTCHA_KEYS["anticaptcha"])
-        if result:
-            return result, "anticaptcha"
-
-    # Layer 4 - capmonster
-    if image_b64 and CAPTCHA_KEYS["capmonster"]:
-        result = solve_captcha_capmonster(image_b64, CAPTCHA_KEYS["capmonster"])
-        if result:
-            return result, "capmonster"
-
-    # Layer 5 - manual fallback
-    print("\n[!] Captcha tidak bisa diselesaikan otomatis.")
-    print("    Masukkan kode captcha manual (atau tekan Enter untuk skip): ", end="")
-    manual = input().strip()
-    if manual:
-        return manual, "manual"
-    return None, "failed"
+import sys, importlib
+REQUIRED = [
+    ("httpx","pip install httpx"),("bs4","pip install beautifulsoup4"),
+    ("pytesseract","pip install pytesseract  (pkg install tesseract)"),
+    ("cloudscraper","pip install cloudscraper"),("curl_cffi","pip install curl_cffi"),
+    ("PIL","pip install pillow"),
+]
+def check_deps():
+    miss=[(m,h) for m,h in REQUIRED if not _has(m)]
+    if miss:
+        print("\n[!] dependency kurang:\n")
+        for m,h in miss: print(f"  - {m:<16} → {h}")
+        print("\ninstall dulu, jalanin ulang.\n"); sys.exit(1)
+def _has(m):
+    try: importlib.import_module(m); return True
+    except ImportError: return False
+check_deps()
 
 # ============================================================
-# SCRAPER ENGINE
+# [SECTION 3] MODELS
 # ============================================================
-def check_site(site, nik):
-    """Coba akses satu situs dengan NIK. Return dict hasil."""
-    name = site["name"]
-    url = site["url"]
-    result = {
-        "site": name,
-        "url": url,
-        "status": "unknown",
-        "data": None,
-        "error": None,
-        "time": None,
-    }
-    start = time.time()
-    try:
-        session = requests.Session()
-        session.headers.update(HEADERS)
+import asyncio, sqlite3, json, time, random, io, re
+from dataclasses import dataclass, field, asdict
+from typing import Optional
+from urllib.parse import urlparse
 
-        # Simple probe: GET the page
-        r = session.get(url, timeout=TIMEOUT, allow_redirects=True)
-        result["http_code"] = r.status_code
-        result["final_url"] = r.url
-
-        # Basic heuristic: look for form or nik mention
-        text_lower = r.text.lower()
-        has_nik_form = any(x in text_lower for x in ["nik", "nomor induk", "ktp", "captcha", "kode keamanan"])
-        if r.status_code == 200:
-            result["status"] = "reachable"
-            result["has_nik_related"] = has_nik_form
-            # Try to extract title
-            if "<title>" in r.text:
-                start_t = r.text.find("<title>") + 7
-                end_t = r.text.find("</title>", start_t)
-                if end_t > start_t:
-                    result["title"] = r.text[start_t:end_t].strip()[:80]
-            # Simulated / best-effort data note
-            result["data"] = {
-                "probe": "page reachable",
-                "nik_input_detected": has_nik_form,
-                "note": "Full form submit + captcha solve needs site-specific selector (template ready)"
-            }
-        else:
-            result["status"] = f"http_{r.status_code}"
-    except requests.exceptions.Timeout:
-        result["status"] = "timeout"
-        result["error"] = "timeout"
-    except requests.exceptions.ConnectionError:
-        result["status"] = "connection_error"
-        result["error"] = "connection failed"
-    except Exception as e:
-        result["status"] = "error"
-        result["error"] = str(e)[:120]
-    result["time"] = round(time.time() - start, 2)
-    return result
-
-def run_all(nik):
-    """Jalankan semua situs secara parallel."""
-    results = []
-    total = len(SITES)
-    print(f"\n[*] Memproses {total} situs dengan NIK: {nik}")
-    print("[*] Multi-thread aktif...\n")
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(check_site, site, nik): site for site in SITES}
-        done = 0
-        for future in as_completed(futures):
-            done += 1
-            res = future.result()
-            status_icon = "✓" if res["status"] == "reachable" else "✗"
-            print(f"  [{done:02d}/{total}] {status_icon} {res['site']:<35} {res['status']:<18} {res['time']}s")
-            results.append(res)
-    return results
+@dataclass
+class TargetResult:
+    target: str
+    url: str
+    status: str
+    nik: str
+    data: dict = field(default_factory=dict)
+    error: str = ""
+    elapsed: float = 0.0
+    timestamp: float = field(default_factory=time.time)
 
 # ============================================================
-# OUTPUT / SENDER
+# [SECTION 4] CAPTCHA
 # ============================================================
-def save_and_send(nik, results):
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"hasil_nik_{nik}_{ts}.json"
-    payload = {
-        "tool": "MR 414N -ID",
-        "nik": nik,
-        "timestamp": datetime.now().isoformat(),
-        "total_sites": len(results),
-        "reachable": sum(1 for r in results if r["status"] == "reachable"),
-        "results": results,
-    }
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    print(f"\n[+] Hasil disimpan: {filename}")
+class BaseSolver:
+    name="base"
+    async def solve(self, html, sitekey="", siteurl="", img=b""): raise NotImplementedError
 
-    # Ringkasan
-    print("\n" + "="*60)
-    print(" RINGKASAN")
-    print("="*60)
-    print(f" NIK          : {nik}")
-    print(f" Total situs  : {len(results)}")
-    print(f" Reachable    : {payload['reachable']}")
-    print(f" Gagal/Timeout: {len(results) - payload['reachable']}")
-    print("="*60)
+class NoSolver(BaseSolver):
+    name="none"
+    async def solve(self,*a,**k): return None
 
-    # Optional webhook / telegram (isi token di env kalau mau)
-    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    telegram_chat = os.getenv("TELEGRAM_CHAT_ID", "")
-    if telegram_token and telegram_chat:
+class Capsolver(BaseSolver):
+    def __init__(self,key,kind): self.key=key; self.kind=kind; self.name="capsolver"
+    async def solve(self,html,sitekey="",siteurl="",img=b""):
+        if not self.key or not sitekey: return None
+        import httpx
+        typ={"recaptcha_v2":"ReCaptchaV2TaskProxyless","recaptcha_v3":"ReCaptchaV3TaskProxyless",
+             "hcaptcha":"HCaptchaTaskProxyless","turnstile":"AntiTurnstileTaskProxyLess"}.get(self.kind,"ReCaptchaV2TaskProxyless")
         try:
-            summary = f"MR 414N -ID\nNIK: {nik}\nReachable: {payload['reachable']}/{len(results)}\nFile: {filename}"
-            requests.post(
-                f"https://api.telegram.org/bot{telegram_token}/sendMessage",
-                json={"chat_id": telegram_chat, "text": summary},
-                timeout=10
-            )
-            print("[+] Hasil dikirim ke Telegram")
-        except Exception as e:
-            print(f"[!] Gagal kirim Telegram: {e}")
+            async with httpx.AsyncClient(timeout=30) as c:
+                r=await c.post("https://api.capsolver.com/createTask",json={"clientKey":self.key,"task":{"type":typ,"websiteURL":siteurl,"websiteKey":sitekey}})
+                tid=r.json().get("taskId")
+                if not tid: return None
+                for _ in range(30):
+                    await asyncio.sleep(3)
+                    j=(await c.post("https://api.capsolver.com/getTaskResult",json={"clientKey":self.key,"taskId":tid})).json()
+                    if j.get("status")=="ready": return j.get("solution",{}).get("gRecaptchaResponse") or j.get("solution",{}).get("token")
+                    if j.get("status")=="failed": return None
+        except Exception: return None
+        return None
 
-    return filename
+class TwoCaptcha(BaseSolver):
+    def __init__(self,key,kind): self.key=key; self.kind=kind; self.name="2captcha"
+    async def solve(self,html,sitekey="",siteurl="",img=b""):
+        if not self.key: return None
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=30) as c:
+                if img:
+                    import base64
+                    r=await c.post("https://2captcha.com/in.php",data={"key":self.key,"method":"base64","body":base64.b64encode(img).decode(),"json":1})
+                    tid=r.json().get("request")
+                    if not tid: return None
+                    for _ in range(30):
+                        await asyncio.sleep(5)
+                        j=(await c.get(f"https://2captcha.com/res.php?key={self.key}&action=get&id={tid}&json=1")).json()
+                        if j.get("status")==1: return j.get("request")
+                    return None
+                meth="userrecaptcha" if "recaptcha" in self.kind else "hcaptcha"
+                r=await c.get(f"https://2captcha.com/in.php?key={self.key}&method={meth}&googlekey={sitekey}&pageurl={siteurl}&json=1")
+                tid=r.json().get("request")
+                if not tid: return None
+                for _ in range(30):
+                    await asyncio.sleep(5)
+                    j=(await c.get(f"https://2captcha.com/res.php?key={self.key}&action=get&id={tid}&json=1")).json()
+                    if j.get("status")==1: return j.get("request")
+                return None
+        except Exception: return None
+
+class Ocr(BaseSolver):
+    name="ocr"
+    async def solve(self,html,sitekey="",siteurl="",img=b""):
+        if not img: return None
+        try:
+            import pytesseract; from PIL import Image
+            im=Image.open(io.BytesIO(img)).convert("L").point(lambda x:0 if x<140 else 255)
+            return re.sub(r"\s+","",pytesseract.image_to_string(im,config="--psm 7")) or None
+        except Exception: return None
+
+class Math(BaseSolver):
+    name="math"
+    async def solve(self,html,sitekey="",siteurl="",img=b""):
+        m=re.search(r"(\d+)\s*([\+\-\*x])\s*(\d+)\s*=\s*\?",html)
+        if not m: return None
+        a,op,b=int(m.group(1)),m.group(2),int(m.group(3))
+        return str({"+":a+b,"-":a-b,"*":a*b,"x":a*b}[op])
+
+class Cloudflare(BaseSolver):
+    name="cloudflare"
+    async def solve(self,*a,**k): return None
+
+def build_solver(t):
+    t=(t or "none").lower()
+    if t=="none": return NoSolver()
+    if t=="math": return Math()
+    if t=="ocr_image": return Ocr()
+    if t=="cloudflare": return Cloudflare()
+    if CAPSOLVER_KEY: return Capsolver(CAPSOLVER_KEY,t)
+    if TWOCAPTCHA_KEY: return TwoCaptcha(TWOCAPTCHA_KEY,t)
+    return NoSolver()
 
 # ============================================================
-# MAIN
+# [SECTION 5] PROXY
 # ============================================================
-def main():
-    os.system("clear" if os.name != "nt" else "cls")
-    print(BANNER)
-    print("  Single-file | 50+ situs pemerintah | Multi-layer anti-captcha")
-    print("  Input hanya NIK. Hasil otomatis dikumpulkan & disimpan.\n")
+class ProxyMgr:
+    def __init__(self,p=None): self.p=p or []; self.i=0
+    def get(self):
+        if not self.p: return None
+        v=self.p[self.i%len(self.p)]; self.i+=1; return v
+    @staticmethod
+    def load(path):
+        try: return [l.strip() for l in open(path) if l.strip() and not l.startswith("#")]
+        except Exception: return []
 
-    # Cek captcha keys
-    active_captcha = [k for k, v in CAPTCHA_KEYS.items() if v]
-    if active_captcha:
-        print(f"  [Captcha aktif] {', '.join(active_captcha)}")
+PROXY=ProxyMgr(ProxyMgr.load("proxies.txt"))
+
+# ============================================================
+# [SECTION 6] HTTP
+# ============================================================
+import httpx
+HEADERS={"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+         "Accept-Language":"id-ID,id;q=0.9,en;q=0.8","Connection":"keep-alive"}
+
+async def fetch(client,t,nik):
+    h=dict(HEADERS); h["User-Agent"]=random.choice(USER_AGENTS)
+    url,method,param=t["url"],t.get("method","GET").upper(),t.get("param","nik")
+    if method=="GET":
+        r=await client.get(url,params={param:nik},headers=h,timeout=HTTP_TIMEOUT,follow_redirects=True)
     else:
-        print("  [Captcha] Tidak ada API key. Akan pakai local OCR + manual fallback.")
-        print("  Set env: TWOCAPTCHA_KEY / ANTICAPTCHA_KEY / CAPMONSTER_KEY jika ingin auto.")
+        r=await client.post(url,data={param:nik},headers=h,timeout=HTTP_TIMEOUT,follow_redirects=True)
+    if r.status_code in (403,503) and "cf-" in (r.text or "")[:2000].lower():
+        r=await _cf(url,method,param,nik,h)
+    return r
 
-    print()
-    nik = input("  Masukkan NIK (16 digit): ").strip()
-    if not (nik.isdigit() and len(nik) == 16):
-        print("\n  [!] NIK harus 16 digit angka.")
-        sys.exit(1)
+async def _cf(url,method,param,nik,headers):
+    try:
+        import cloudscraper
+        sc=cloudscraper.create_scraper(browser={"browser":"chrome","platform":"android","mobile":True})
+        r=sc.get(url,params={param:nik},headers=headers,timeout=HTTP_TIMEOUT) if method=="GET" else sc.post(url,data={param:nik},headers=headers,timeout=HTTP_TIMEOUT)
+        return httpx.Response(r.status_code,content=r.content,headers=dict(r.headers),request=httpx.Request(method,url))
+    except Exception:
+        return httpx.Response(599,content=b"",request=httpx.Request(method,url))
 
-    print(f"\n  NIK diterima: {nik}")
-    confirm = input("  Lanjut scan semua situs? (y/n): ").strip().lower()
-    if confirm != "y":
-        print("  Dibatalkan.")
-        sys.exit(0)
+# ============================================================
+# [SECTION 7] PARSER — dump SEMUA yang ada di halaman
+# ============================================================
+from bs4 import BeautifulSoup
 
-    results = run_all(nik)
-    save_and_send(nik, results)
-    print("\n  Selesai.\n")
+def parse_generic(html,url):
+    soup=BeautifulSoup(html,"html.parser")
+    out={"url":url,"title":"","headings":[],"paragraphs":[],"tables":[],
+         "kv_pairs":[],"links":[],"nik_matches":[],"numbers":[],"status_hint":"unknown"}
 
-if __name__ == "__main__":
-    main()
+    if soup.title and soup.title.string:
+        out["title"]=soup.title.string.strip()
+
+    # headings
+    for tag in soup.find_all(["h1","h2","h3","h4"]):
+        txt=tag.get_text(" ",strip=True)
+        if txt and len(txt)<200: out["headings"].append(txt)
+
+    # paragraphs / divs teks
+    seen=set()
+    for tag in soup.find_all(["p","li","td","span","div","label","strong","b"]):
+        txt=tag.get_text(" ",strip=True)
+        if 4<len(txt)<500 and txt not in seen and not any(txt in s for s in seen):
+            seen.add(txt); out["paragraphs"].append(txt)
+
+    # tables — baris per baris
+    for tbl in soup.find_all("table"):
+        rows=[]
+        for tr in tbl.find_all("tr"):
+            cells=[c.get_text(" ",strip=True) for c in tr.find_all(["td","th"])]
+            cells=[c for c in cells if c]
+            if cells: rows.append(cells)
+        if rows: out["tables"].append(rows)
+
+    # label : value
+    for tag in soup.find_all(["label","dt","th","strong","b"]):
+        lab=tag.get_text(" ",strip=True).rstrip(":").strip()
+        if not (2<len(lab)<60): continue
+        sib=tag.find_next_sibling()
+        if sib:
+            val=sib.get_text(" ",strip=True)
+            if 1<len(val)<200:
+                out["kv_pairs"].append({"label":lab,"value":val})
+
+    # links penting
+    for a in soup.find_all("a",href=True):
+        t=a.get_text(" ",strip=True)
+        if t and 2<len(t)<80:
+            out["links"].append({"text":t,"href":a["href"][:200]})
+
+    # NIK match
+    for m in re.finditer(r"\b\d{16}\b",html):
+        if m.group(0) not in out["nik_matches"]:
+            out["nik_matches"].append(m.group(0))
+
+    # angka menarik (desil, skor, kategori)
+    for kw in ("desil","decile","skor","score","peringkat","rank","kategori","category","status","kelas","golongan"):
+        for m in re.finditer(rf"{kw}[^\w]{{0,10}}([0-9]+|[A-Za-z]+)",html,re.I):
+            out["numbers"].append(f"{kw}: {m.group(1)}")
+
+    # status hint
+    body=re.sub(r"\s+"," ",soup.get_text(" ")).lower()
+    if any(w in body for w in ("tidak ditemukan","not found","tidak terdaftar","data tidak ada")):
+        out["status_hint"]="not_found"
+    elif any(w in body for w in ("ditemukan","found","terdaftar","berhasil")):
+        out["status_hint"]="found"
+
+    # teks mentah
+    if SHOW_FULL_TEXT:
+        full=re.sub(r"\s+"," ",soup.get_text(" ")).strip()
+        out["full_text"]=full[:MAX_TEXT_CHARS]
+
+    return out
+
+PARSERS={"generic":parse_generic}
+
+# ============================================================
+# [SECTION 8] STORAGE
+# ============================================================
+def init_db(path="nik_results.db"):
+    c=sqlite3.connect(path)
+    c.execute("""CREATE TABLE IF NOT EXISTS results(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,timestamp REAL,target TEXT,url TEXT,
+        status TEXT,nik TEXT,elapsed REAL,error TEXT,data TEXT)""")
+    c.commit(); return c
+
+def save(con,r):
+    con.execute("INSERT INTO results(timestamp,target,url,status,nik,elapsed,error,data) VALUES(?,?,?,?,?,?,?,?)",
+                (r.timestamp,r.target,r.url,r.status,r.nik,r.elapsed,r.error,json.dumps(r.data,ensure_ascii=False)))
+    con.commit()
+
+# ============================================================
+# [SECTION 9] ORCHESTRATOR
+# ============================================================
+async def run_one(client,sem,t,nik):
+    async with sem:
+        t0=time.time(); res=TargetResult(target=t["name"],url=t["url"],status="fail",nik=nik)
+        try:
+            solver=build_solver(t.get("captcha","none"))
+            resp=await fetch(client,t,nik)
+            if solver.name in ("math","ocr","capsolver","2captcha"):
+                tok=await solver.solve(resp.text,siteurl=t["url"])
+                if tok: res.data["captcha_token"]=tok[:24]+"..."
+            if resp.status_code>=400:
+                res.status="blocked" if resp.status_code in (403,429) else "fail"
+                res.error=f"http {resp.status_code}"; res.elapsed=time.time()-t0; return res
+            parser=PARSERS.get(t.get("parser","generic"),parse_generic)
+            res.data=parser(resp.text,str(resp.url)); res.status="ok"
+        except Exception as e:
+            res.error=f"{type(e).__name__}: {e}"
+        res.elapsed=time.time()-t0
+        await asyncio.sleep(t.get("rate",1.0))
+        return res
+
+async def run_all(nik,on_done):
+    sem=asyncio.Semaphore(CONCURRENCY)
+    lim=httpx.Limits(max_keepalive_connections=CONCURRENCY*2,max_connections=CONCURRENCY*4)
+    async with httpx.AsyncClient(limits=lim,proxies=PROXY.get(),verify=False) as client:
+        tasks=[asyncio.create_task(run_one(client,sem,t,nik)) for t in TARGETS]
+        for c in asyncio.as_completed(tasks):
+            on_done(await c)
+
+# ============================================================
+# [SECTION 10] DISPLAY — print lengkap ke terminal
+# ============================================================
+def print_full_result(r: TargetResult, idx: int, total: int):
+    flag={"ok":"✅","blocked":"🚫","fail":"❌","skipped":"⏭️"}.get(r.status,"•")
+    print("\n"+"═"*60)
+    print(f"{flag} [{idx}/{total}] {r.target}  —  {r.status}  ({r.elapsed:.1f}s)")
+    print(f"   {r.url}")
+    if r.error:
+        print(f"   error: {r.error}")
+    if r.status!="ok" or not r.data:
+        return
+
+    d=r.data
+    if d.get("title"): print(f"\n   📄 title: {d['title']}")
+
+    if d.get("status_hint") and d["status_hint"]!="unknown":
+        print(f"   📊 status: {d['status_hint']}")
+
+    if d.get("nik_matches"):
+        print(f"\n   🔢 NIK ditemukan di halaman: {', '.join(d['nik_matches'][:5])}")
+
+    if d.get("numbers"):
+        print("\n   📈 angka/kategori:")
+        for n in d["numbers"][:15]: print(f"      • {n}")
+
+    if d.get("kv_pairs"):
+        print("\n   🏷️  label → value:")
+        for kv in d["kv_pairs"][:20]:
+            print(f"      • {kv['label']}: {kv['value'][:80]}")
+
+    if d.get("tables"):
+        print("\n   📋 tabel:")
+        for ti,tbl in enumerate(d["tables"][:3]):
+            print(f"      [tabel {ti+1}]")
+            for row in tbl[:10]:
+                print(f"        | " + " | ".join(c[:30] for c in row))
+
+    if d.get("headings"):
+        print("\n   🔖 headings:")
+        for h in d["headings"][:10]: print(f"      • {h[:100]}")
+
+    if d.get("paragraphs"):
+        print("\n   📝 teks:")
+        for p in d["paragraphs"][:15]: print(f"      • {p[:160]}")
+
+    if d.get("full_text"):
+        print("\n   📃 full text (potongan):")
+        print("      " + d["full_text"][:1200].replace("\n"," "))
+
+def print_header(nik):
+    print("="*60)
+    print(f"  NIK AGGREGATOR — {len(TARGETS)} situs")
+    print(f"  NIK: {nik}")
+    print("="*60)
+
+def print_summary(results):
+    ok=sum(1 for r in results if r.status=="ok")
+    print("\n"+"═"*60)
+    print(f"  RINGKASAN: {ok}/{len(results)} ok")
+    for r in results:
+        flag={"ok":"✅","blocked":"🚫","fail":"❌"}.get(r.status,"•")
+        hint=r.data.get("status_hint","") if r.status=="ok" else r.error
+        print(f"   {flag} {r.target:<28} {r.status:<8} {hint}")
+    print("═"*60)
+
+# ============================================================
+# [SECTION 11] DELIVERY + MAIN
+# ============================================================
+async def send_tg(nik,results):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT: return False
+    lines=[f"🔎 NIK: {nik}",f"hasil: {sum(1 for r in results if r.status=='ok')}/{len(results)}",""]
+    for r in results:
+        flag={"ok":"✅","blocked":"🚫","fail":"❌"}.get(r.status,"•")
+        lines.append(f"{flag} {r.target} — {r.status}")
+        if r.status=="ok" and r.data.get("status_hint"):
+            lines.append(f"   {r.data['status_hint']}")
+        if r.status=="ok" and r.data.get("kv_pairs"):
+            for kv in r.data["kv_pairs"][:3]:
+                lines.append(f"   {kv['label']}: {kv['value'][:40]}")
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            await c.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                         json={"chat_id":TELEGRAM_CHAT,"text":"\n".join(lines)[:3800]})
+        return True
+    except Exception: return False
+
+def save_json(nik,results,path=OUTPUT_JSON):
+    with open(path,"w",encoding="utf-8") as f:
+        json.dump({"nik":nik,"generated_at":time.time(),
+                   "results":[asdict(r) for r in results]},f,indent=2,ensure_ascii=False)
+    return path
+
+def main():
+    if not TARGETS:
+        print("[!] TARGETS kosong. isi dulu di SECTION 1 dengan URL search NIK asli.")
+        return
+    print_header("—")
+    try:
+        nik=input("masukkan NIK (16 digit): ").strip()
+    except (EOFError,KeyboardInterrupt):
+        print("\nbatal."); return
+    if not re.fullmatch(r"\d{16}",nik):
+        print("[!] NIK harus 16 digit."); return
+
+    print_header(nik)
+    con=init_db(); results=[]; idx=0; total=len(TARGETS)
+
+    def on_done(r):
+        nonlocal idx
+        idx+=1; results.append(r); save(con,r)
+        print_full_result(r,idx,total)
+
+    print(f"\n[~] scanning {total} situs...")
+    asyncio.run(run_all(nik,on_done))
+
+    print_summary(results)
+    print(f"\n[+] json arsip: {save_json(nik,results)}")
+    print(f"[+] telegram: {'terkirim' if asyncio.run(send_tg(nik,results)) else 'skip'}")
+    con.close()
+
+if __name__=="__main__":
+    try: main()
+    except KeyboardInterrupt: print("\n\ninterrupted.")
